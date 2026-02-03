@@ -12,6 +12,10 @@ const MOCK_ACCOUNT = {
   upvotesReceived: 184,
   linkedin: 'https://linkedin.com/in/johndoe',
   github: 'https://github.com/johndoe',
+  techStack: ['React', 'Node.js', 'TypeScript', 'PostgreSQL'],
+  expertise: ['FRC', 'Web apps', 'Dashboards', 'Productivity'],
+  availability: 'open to cofounding',
+  badges: ['Top Creator for FRC', 'Highly Rated This Month'],
 };
 
 const MOCK_PAST_APPS = [
@@ -21,6 +25,11 @@ const MOCK_PAST_APPS = [
   { id: 4, title: 'Scout Export Tool', link: 'https://example.com/export-tool', requestTitle: 'Scouting data export to CSV/Excel', requestId: 'r5', upvotes: 31, date: '6 months ago', type: 'app' },
 ];
 
+const MOCK_MY_REQUESTS = [
+  { id: 'r1', text: 'FRC fantasy website/app', upvotes: 89, date: '2 days ago', solutions: 2 },
+  { id: 'r3', text: 'Mobile app for event check-in', upvotes: 54, date: '5 days ago', solutions: 0 },
+];
+
 function yearsSince(dateStr) {
   const d = new Date(dateStr);
   const now = new Date();
@@ -28,10 +37,10 @@ function yearsSince(dateStr) {
   return Math.floor(years);
 }
 
-const TABS = ['Overview', 'Past apps'];
+const TABS = ['My Requests', 'Overview', 'Past apps'];
 
 export default function Account() {
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState('My Requests');
   const years = yearsSince(MOCK_ACCOUNT.joinedDate);
   const rank = getRankFromUpvotes(MOCK_ACCOUNT.upvotesReceived, MOCK_ACCOUNT.solutionsSubmitted);
 
@@ -64,8 +73,28 @@ export default function Account() {
         <div style={{ marginBottom: '0.5rem' }}>
           <RankBadge rank={rank} style={{ fontSize: '0.8rem', padding: '0.3em 0.65em' }} />
         </div>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.95rem' }}>{MOCK_ACCOUNT.email}</p>
-        <p style={{ color: 'var(--text-primary)', lineHeight: 1.6, margin: 0, fontSize: '0.95rem' }}>{MOCK_ACCOUNT.bio}</p>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.95rem' }}>{MOCK_ACCOUNT.email}</p>
+        <p style={{ color: 'var(--text-primary)', lineHeight: 1.6, margin: 0, fontSize: '0.95rem', marginBottom: '1rem' }}>{MOCK_ACCOUNT.bio}</p>
+        {(MOCK_ACCOUNT.badges || []).length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center', marginBottom: '0.75rem' }}>
+            {MOCK_ACCOUNT.badges.map((b) => (
+              <span key={b} className="badge badge-ai" style={{ fontSize: '0.75rem' }}>{b}</span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center', marginBottom: '0.35rem' }}>
+          {(MOCK_ACCOUNT.techStack || []).map((t) => (
+            <span key={t} style={{ fontSize: '0.8rem', padding: '0.25em 0.5em', background: 'var(--accent-soft)', borderRadius: 6, color: 'var(--blue-dark)' }}>{t}</span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center', marginBottom: '0.5rem' }}>
+          {(MOCK_ACCOUNT.expertise || []).map((e) => (
+            <span key={e} style={{ fontSize: '0.8rem', padding: '0.25em 0.5em', background: 'var(--accent-muted)', borderRadius: 6, color: 'var(--text-primary)' }}>{e}</span>
+          ))}
+        </div>
+        {MOCK_ACCOUNT.availability && (
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: 0 }}>Availability: {MOCK_ACCOUNT.availability}</p>
+        )}
       </div>
 
       {/* Tabs */}
@@ -88,6 +117,47 @@ export default function Account() {
           </button>
         ))}
       </div>
+
+      {activeTab === 'My Requests' && (
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <h2 style={{ marginBottom: '1rem', fontSize: '1.2rem' }}>My requests</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '1.25rem' }}>
+            Requests you've created.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {MOCK_MY_REQUESTS.map((req) => (
+              <Link key={req.id} to={`/request/${req.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem',
+                    padding: '1rem',
+                    background: 'var(--accent-soft)',
+                    borderRadius: 10,
+                    border: '1px solid var(--border-soft)',
+                    cursor: 'pointer',
+                    transition: 'box-shadow 0.2s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.15)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ''; }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.25rem' }}>{req.text}</div>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{req.date}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                    <span className="badge badge-count">{req.upvotes} upvotes</span>
+                    <span>· {req.solutions} solution{req.solutions !== 1 ? 's' : ''}</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {activeTab === 'Overview' && (
         <>
