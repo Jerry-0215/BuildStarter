@@ -10,9 +10,12 @@ import RequestDetail from './pages/RequestDetail';
 import Account from './pages/Account';
 import './App.css';
 
+// BASE_URL is set by Vite from the `base` config. Use it so routes work when deployed to a subpath (e.g. GitHub Pages).
+const basename = import.meta.env.BASE_URL ?? '/';
+
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <FollowProvider>
         <Layout>
           <Routes>
