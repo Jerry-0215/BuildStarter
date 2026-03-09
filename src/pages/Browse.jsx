@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MOCK_REQUESTS, CATEGORIES } from '../data/mockRequests';
+import { CATEGORIES } from '../data/mockRequests';
 import { REQUEST_DEMAND, ACTIVITY_FEED } from '../data/mockDemo';
 import MarketFitBadge from '../components/MarketFitBadge';
 import { useFollow } from '../context/FollowContext';
+import { supabase } from '../lib/supabase';
+
+function timeAgo(dateStr) {
+  const diff = (Date.now() - new Date(dateStr)) / 1000;
+  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)} days ago`;
+  return `${Math.floor(diff / 604800)} weeks ago`;
+}
 
 export default function Browse() {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState(null);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
@@ -13,6 +24,18 @@ export default function Browse() {
   const [keyFeaturesExpanded, setKeyFeaturesExpanded] = useState(false);
   const [keyFeatures, setKeyFeatures] = useState(['']);
   const { followedRequests, toggleRequest } = useFollow();
+
+  useEffect(() => {
+    async function fetchRequests() {
+      const { data, error } = await supabase
+        .from('requests')
+        .select('*, solutions(count)')
+        .order('upvotes', { ascending: false });
+      if (!error) setRequests(data);
+      setLoading(false);
+    }
+    fetchRequests();
+  }, []);
 
   const addFeature = () => setKeyFeatures((prev) => [...prev, '']);
   const removeFeature = (i) => setKeyFeatures((prev) => prev.filter((_, idx) => idx !== i));
@@ -25,7 +48,7 @@ export default function Browse() {
     setRequestUpvotes((prev) => ({ ...prev, [reqId]: (prev[reqId] ?? 0) + 1 }));
   };
 
-  const filteredRequests = MOCK_REQUESTS.filter((r) => {
+  const filteredRequests = requests.filter((r) => {
     const matchesSearch = !search.trim() || r.text.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = !category || r.category === category;
     return matchesSearch && matchesCategory;
@@ -37,9 +60,7 @@ export default function Browse() {
       <p style={{ color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
         Search, create a request, or open one to see details and solutions.
       </p>
-      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '2rem', fontStyle: 'italic' }}>
-        This is a high-fidelity front-end demo — no backend, payments, or auth. All interactions are illustrative.
-      </p>
+      {loading && <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Loading requests…</p>}
 
       {/* Search */}
       <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -157,9 +178,9 @@ export default function Browse() {
                     >
                       {followedRequests[req.id] ? 'Following' : 'Follow'}
                     </button>
-                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{req.date}</span>
-                    {req.solutions?.length > 0 && (
-                      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>· {req.solutions.length} solution{req.solutions.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{timeAgo(req.created_at)}</span>
+                    {req.solutions?.[0]?.count > 0 && (
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>· {req.solutions[0].count} solution{req.solutions[0].count !== 1 ? 's' : ''}</span>
                     )}
                   </div>
                 </div>

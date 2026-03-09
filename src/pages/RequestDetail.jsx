@@ -1,7 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { MOCK_REQUESTS } from '../data/mockRequests';
 import { MOCK_CREATORS, FEEDBACK_DIMENSIONS } from '../data/mockDemo';
+import { supabase } from '../lib/supabase';
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = (Date.now() - new Date(dateStr)) / 1000;
+  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)} days ago`;
+  return `${Math.floor(diff / 604800)} weeks ago`;
+}
 import RankBadge from '../components/RankBadge';
 import Modal from '../components/Modal';
 import FollowButton from '../components/FollowButton';
@@ -45,7 +54,21 @@ const COLLAB_MODAL_BODY = (
 
 export default function RequestDetail() {
   const { id } = useParams();
-  const request = MOCK_REQUESTS.find((r) => r.id === id);
+  const [request, setRequest] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchRequest() {
+      const { data, error } = await supabase
+        .from('requests')
+        .select('*, features(*), solutions(*, comments(*))')
+        .eq('id', id)
+        .single();
+      if (!error) setRequest(data);
+      setLoading(false);
+    }
+    fetchRequest();
+  }, [id]);
   const [proposeFeatureText, setProposeFeatureText] = useState('');
   const [showPropose, setShowPropose] = useState(false);
   const [showPostSolution, setShowPostSolution] = useState(false);
@@ -69,7 +92,7 @@ export default function RequestDetail() {
   };
 
   const allFeatures = useMemo(() => {
-    const base = (request?.features ?? []).map((f, i) => ({ ...f, id: `base-${i}` }));
+    const base = (request?.features ?? []);
     const proposed = proposedFeatures.map((f, i) => ({ ...f, id: `proposed-${i}` }));
     const combined = [...base, ...proposed];
     return combined.sort((a, b) => {
@@ -84,6 +107,9 @@ export default function RequestDetail() {
   const getFeatureUp = (feat) => (feat.upvotes ?? 0) + (featureVotes[feat.id]?.up ?? 0);
   const getFeatureDown = (feat) => (feat.downvotes ?? 0) + (featureVotes[feat.id]?.down ?? 0);
 
+  if (loading) {
+    return <div className="container" style={{ padding: '2rem' }}>Loading…</div>;
+  }
   if (!request) {
     return (
       <div className="container" style={{ padding: '2rem' }}>
@@ -99,14 +125,14 @@ export default function RequestDetail() {
     if (!text.trim()) return;
     setComments((prev) => ({
       ...prev,
-      [solutionId]: [...(prev[solutionId] ?? []), { id: `new-${Date.now()}`, author: 'You', text: text.trim(), date: 'Just now' }],
+      [solutionId]: [...(prev[solutionId] ?? []), { id: `new-${Date.now()}`, author: 'You', text: text.trim(), created_at: null }],
     }));
     setNewComment((prev) => ({ ...prev, [solutionId]: '' }));
   };
   const solutionComments = (solutionId) => {
     const sol = request.solutions.find((s) => s.id === solutionId);
-    const existing = sol?.comments ?? [];
-    const added = comments[solutionId] ?? [];
+    const existing = (sol?.comments ?? []).map((c) => ({ ...c, date: timeAgo(c.created_at) }));
+    const added = (comments[solutionId] ?? []).map((c) => ({ ...c, date: 'Just now' }));
     return [...existing, ...added];
   };
 
@@ -146,7 +172,7 @@ export default function RequestDetail() {
       <Link to="/" style={{ display: 'inline-block', marginBottom: '1rem', fontSize: '0.9rem' }}>← Back to browse</Link>
       <h1 style={{ marginBottom: '0.5rem' }}>{request.text}</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-        {request.upvotes} upvotes · {request.date}
+        {request.upvotes} upvotes · {timeAgo(request.created_at)}
       </p>
 
       {/* Existing features */}
@@ -216,7 +242,7 @@ export default function RequestDetail() {
                     </div>
                     <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                       by {sol.author}
-                      <RankBadge rank={sol.authorRank} />
+                      <RankBadge rank={sol.author_rank} />
                     </span>
                   </div>
 
