@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { MOCK_CREATORS, FEEDBACK_DIMENSIONS } from '../data/mockDemo';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import { getRankFromUpvotes } from '../utils/rank';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -54,41 +56,51 @@ const COLLAB_MODAL_BODY = (
 
 export default function RequestDetail() {
   const { id } = useParams();
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchRequest() {
-      const { data, error } = await supabase
-        .from('requests')
-        .select('*, features(*), solutions(*, comments(*))')
-        .eq('id', id)
-        .single();
-      if (!error) setRequest(data);
-      setLoading(false);
-    }
-    fetchRequest();
-  }, [id]);
+  async function fetchRequest() {
+    const { data, error } = await supabase
+      .from('requests')
+      .select('*, features(*), solutions(*, comments(*))')
+      .eq('id', id)
+      .single();
+    if (!error) setRequest(data);
+    setLoading(false);
+  }
+
+  useEffect(() => { fetchRequest(); }, [id]);
   const [proposeFeatureText, setProposeFeatureText] = useState('');
   const [showPropose, setShowPropose] = useState(false);
   const [showPostSolution, setShowPostSolution] = useState(false);
   const [solutionUrl, setSolutionUrl] = useState('');
+  const [solutionTitle, setSolutionTitle] = useState('');
   const [solutionType, setSolutionType] = useState('app');
+  const [submittingSolution, setSubmittingSolution] = useState(false);
   const [ratings, setRatings] = useState({});
   const [comments, setComments] = useState({});
   const [newComment, setNewComment] = useState({});
   const [proposedFeatures, setProposedFeatures] = useState([]);
   const [featureVotes, setFeatureVotes] = useState({});
   const [collaborationModal, setCollaborationModal] = useState(null);
-  const [feedbackScores, setFeedbackScores] = useState({}); // { [solutionId]: { ux, featureCompleteness, scalability, overall } }
+  const [feedbackScores, setFeedbackScores] = useState({});
   const [showFeedbackFor, setShowFeedbackFor] = useState(null);
 
-  const voteFeature = (featureKey, direction) => {
+  const voteFeature = async (featureKey, direction) => {
+    if (!user) { navigate('/login'); return; }
+    // Optimistic update in local state
     setFeatureVotes((prev) => {
       const cur = prev[featureKey] ?? { up: 0, down: 0 };
       if (direction === 'up') return { ...prev, [featureKey]: { ...cur, up: cur.up + 1 } };
       return { ...prev, [featureKey]: { ...cur, down: cur.down + 1 } };
     });
+    // Persist to DB only for real DB rows (numeric id)
+    if (typeof featureKey === 'number' || (typeof featureKey === 'string' && !featureKey.startsWith('proposed-'))) {
+      const rpcName = direction === 'up' ? 'upvote_feature' : 'downvote_feature';
+      await supabase.rpc(rpcName, { feat_id: Number(featureKey) });
+    }
   };
 
   const allFeatures = useMemo(() => {
@@ -121,14 +133,26 @@ export default function RequestDetail() {
 
   const setRating = (solutionId, stars) => setRatings((prev) => ({ ...prev, [solutionId]: stars }));
   const getRating = (solutionId) => ratings[solutionId] ?? request.solutions.find((s) => s.id === solutionId)?.rating ?? 0;
-  const addComment = (solutionId, text) => {
+
+  const addComment = async (solutionId, text) => {
     if (!text.trim()) return;
+    if (!user) { navigate('/login'); return; }
+    const authorName = profile?.name || user.email?.split('@')[0] || 'You';
+    // Optimistic update
     setComments((prev) => ({
       ...prev,
-      [solutionId]: [...(prev[solutionId] ?? []), { id: `new-${Date.now()}`, author: 'You', text: text.trim(), created_at: null }],
+      [solutionId]: [...(prev[solutionId] ?? []), { id: `new-${Date.now()}`, author: authorName, text: text.trim(), created_at: null }],
     }));
     setNewComment((prev) => ({ ...prev, [solutionId]: '' }));
+    // Persist
+    await supabase.from('comments').insert({
+      id: crypto.randomUUID(),
+      solution_id: solutionId,
+      author: authorName,
+      text: text.trim(),
+    });
   };
+
   const solutionComments = (solutionId) => {
     const sol = request.solutions.find((s) => s.id === solutionId);
     const existing = (sol?.comments ?? []).map((c) => ({ ...c, date: timeAgo(c.created_at) }));
@@ -136,11 +160,45 @@ export default function RequestDetail() {
     return [...existing, ...added];
   };
 
-  const submitProposedFeature = () => {
+  const submitProposedFeature = async () => {
     if (!proposeFeatureText.trim()) return;
-    setProposedFeatures((prev) => [...prev, { text: proposeFeatureText.trim(), upvotes: 0, downvotes: 0 }]);
+    if (!user) { navigate('/login'); return; }
+    const { data, error } = await supabase
+      .from('features')
+      .insert({ request_id: id, text: proposeFeatureText.trim(), upvotes: 0, downvotes: 0 })
+      .select()
+      .single();
+    if (!error && data) {
+      // Re-fetch so we have the real DB id for future votes
+      await fetchRequest();
+    } else {
+      // Fallback: add locally
+      setProposedFeatures((prev) => [...prev, { text: proposeFeatureText.trim(), upvotes: 0, downvotes: 0 }]);
+    }
     setProposeFeatureText('');
     setShowPropose(false);
+  };
+
+  const handlePostSolution = async () => {
+    if (!user) { navigate('/login'); return; }
+    if (!solutionTitle.trim() || !solutionUrl.trim()) return;
+    setSubmittingSolution(true);
+    const authorName = profile?.name || user.email?.split('@')[0] || 'Anonymous';
+    const authorRank = getRankFromUpvotes(profile?.upvotes_received ?? 0, profile?.solutions_submitted ?? 0);
+    await supabase.from('solutions').insert({
+      id: crypto.randomUUID(),
+      request_id: id,
+      title: solutionTitle.trim(),
+      type: solutionType,
+      link: solutionUrl.trim(),
+      author: authorName,
+      author_rank: authorRank,
+    });
+    setSolutionTitle('');
+    setSolutionUrl('');
+    setShowPostSolution(false);
+    setSubmittingSolution(false);
+    await fetchRequest();
   };
 
   // Mock aggregate feedback (base) + user's slider values
@@ -148,7 +206,6 @@ export default function RequestDetail() {
     const base = { ux: 4.2, featureCompleteness: 3.8, scalability: 3.5, overall: 4.0 };
     const user = feedbackScores[solId];
     if (!user) return base;
-    const n = 1 + (user.ux != null ? 1 : 0) + (user.featureCompleteness != null ? 1 : 0) + (user.scalability != null ? 1 : 0) + (user.overall != null ? 1 : 0);
     const count = [user.ux, user.featureCompleteness, user.scalability, user.overall].filter((v) => v != null).length;
     if (count === 0) return base;
     return {
@@ -281,7 +338,7 @@ export default function RequestDetail() {
                   <div style={{ marginBottom: '1rem' }}>
                     <span style={{ marginRight: '0.5rem', fontSize: '0.9rem' }}>Rate:</span>
                     <StarRating value={getRating(sol.id)} onChange={(stars) => setRating(sol.id, stars)} />
-                    <span style={{ marginLeft: '0.5rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>({sol.ratingCount} ratings)</span>
+                    <span style={{ marginLeft: '0.5rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>({sol.rating_count} ratings)</span>
                   </div>
 
                   {/* Structured feedback: aggregated + sliders */}
@@ -349,6 +406,13 @@ export default function RequestDetail() {
           <button className="btn-secondary" onClick={() => setShowPostSolution(!showPostSolution)}>{showPostSolution ? 'Cancel' : '+ Post a solution'}</button>
           {showPostSolution && (
             <div className="card" style={{ marginTop: '1rem', maxWidth: 520 }}>
+              {!user && (
+                <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                  <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>Sign in</Link> to post a solution.
+                </p>
+              )}
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Title</label>
+              <input type="text" placeholder="e.g. FRC Fantasy Web App" value={solutionTitle} onChange={(e) => setSolutionTitle(e.target.value)} style={{ width: '100%', marginBottom: '1rem' }} />
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Type</label>
               <select value={solutionType} onChange={(e) => setSolutionType(e.target.value)} style={{ marginBottom: '1rem', padding: '0.6em 0.9em', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'inherit' }}>
                 <option value="app">App</option>
@@ -356,7 +420,9 @@ export default function RequestDetail() {
               </select>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>{solutionType === 'app' ? 'App URL' : 'Demo URL'}</label>
               <input type="url" placeholder={solutionType === 'app' ? 'https://my-app.example.com' : 'https://my-demo.vercel.app'} value={solutionUrl} onChange={(e) => setSolutionUrl(e.target.value)} style={{ width: '100%', marginBottom: '1rem' }} />
-              <button className="btn-primary" onClick={() => { setSolutionUrl(''); setShowPostSolution(false); }}>Submit</button>
+              <button className="btn-primary" disabled={submittingSolution || !solutionTitle.trim() || !solutionUrl.trim()} onClick={handlePostSolution}>
+                {submittingSolution ? 'Submitting…' : 'Submit'}
+              </button>
             </div>
           )}
         </div>

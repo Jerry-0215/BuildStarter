@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { CATEGORIES } from '../data/mockRequests';
 import { REQUEST_DEMAND, ACTIVITY_FEED } from '../data/mockDemo';
 import MarketFitBadge from '../components/MarketFitBadge';
 import { useFollow } from '../context/FollowContext';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
 function timeAgo(dateStr) {
@@ -15,14 +16,18 @@ function timeAgo(dateStr) {
 }
 
 export default function Browse() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState(null);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [newRequestText, setNewRequestText] = useState('');
+  const [newRequestCategory, setNewRequestCategory] = useState('');
   const [keyFeaturesExpanded, setKeyFeaturesExpanded] = useState(false);
   const [keyFeatures, setKeyFeatures] = useState(['']);
+  const [submitting, setSubmitting] = useState(false);
   const { followedRequests, toggleRequest } = useFollow();
 
   useEffect(() => {
@@ -42,10 +47,40 @@ export default function Browse() {
   const updateFeature = (i, value) => setKeyFeatures((prev) => prev.map((v, idx) => (idx === i ? value : v)));
 
   const [requestUpvotes, setRequestUpvotes] = useState({});
-  const upvoteRequest = (e, reqId) => {
+  const upvoteRequest = async (e, reqId) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!user) { navigate('/login'); return; }
+    // Optimistic update
     setRequestUpvotes((prev) => ({ ...prev, [reqId]: (prev[reqId] ?? 0) + 1 }));
+    await supabase.rpc('upvote_request', { req_id: reqId });
+  };
+
+  const handleSubmitRequest = async () => {
+    if (!user) { navigate('/login'); return; }
+    if (!newRequestText.trim()) return;
+    setSubmitting(true);
+    const newId = crypto.randomUUID();
+    const { data: inserted, error } = await supabase
+      .from('requests')
+      .insert({ id: newId, text: newRequestText.trim(), category: newRequestCategory || 'general', upvotes: 0 })
+      .select()
+      .single();
+    if (!error && inserted) {
+      const validFeatures = keyFeatures.filter((f) => f.trim());
+      if (validFeatures.length > 0) {
+        await supabase.from('features').insert(
+          validFeatures.map((f) => ({ request_id: newId, text: f.trim(), upvotes: 0, downvotes: 0 }))
+        );
+      }
+      setRequests((prev) => [{ ...inserted, solutions: [] }, ...prev]);
+    }
+    setNewRequestText('');
+    setNewRequestCategory('');
+    setKeyFeatures(['']);
+    setKeyFeaturesExpanded(false);
+    setShowCreateRequest(false);
+    setSubmitting(false);
   };
 
   const filteredRequests = requests.filter((r) => {
@@ -223,6 +258,11 @@ export default function Browse() {
         </button>
         {showCreateRequest && (
           <div className="card" style={{ marginTop: '1rem', width: '100%', maxWidth: '560px', textAlign: 'left' }}>
+            {!user && (
+              <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>Sign in</Link> to submit a request.
+              </p>
+            )}
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>What would you want to build?</label>
             <textarea
               placeholder="e.g. I would like an FRC fantasy website/app"
@@ -231,6 +271,15 @@ export default function Browse() {
               rows={3}
               style={{ width: '100%', marginBottom: '1rem', resize: 'vertical' }}
             />
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Category</label>
+            <select
+              value={newRequestCategory}
+              onChange={(e) => setNewRequestCategory(e.target.value)}
+              style={{ width: '100%', marginBottom: '1rem', padding: '0.6em 0.9em', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'inherit' }}
+            >
+              <option value="">Select a category…</option>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
             <div style={{ marginBottom: '1rem' }}>
               <button
                 type="button"
@@ -258,8 +307,8 @@ export default function Browse() {
                 </div>
               )}
             </div>
-            <button className="btn-primary" onClick={() => { setNewRequestText(''); setKeyFeatures(['']); setKeyFeaturesExpanded(false); setShowCreateRequest(false); }}>
-              Submit request
+            <button className="btn-primary" disabled={submitting || !newRequestText.trim()} onClick={handleSubmitRequest}>
+              {submitting ? 'Submitting…' : 'Submit request'}
             </button>
           </div>
         )}
