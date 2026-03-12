@@ -71,7 +71,23 @@ export default function RequestDetail() {
     setLoading(false);
   }
 
+  // Fetch request data once when the request ID changes
   useEffect(() => { fetchRequest(); }, [id]);
+
+  // Separately load which features this user has already voted on
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('feature_votes')
+      .select('feature_id, direction')
+      .eq('user_id', user.id)
+      .then(({ data }) => {
+        if (!data) return;
+        const voted = {};
+        data.forEach((v) => { voted[v.feature_id] = v.direction; });
+        setVotedFeatures(voted);
+      });
+  }, [user]);
   const [proposeFeatureText, setProposeFeatureText] = useState('');
   const [showPropose, setShowPropose] = useState(false);
   const [showPostSolution, setShowPostSolution] = useState(false);
@@ -84,22 +100,34 @@ export default function RequestDetail() {
   const [newComment, setNewComment] = useState({});
   const [proposedFeatures, setProposedFeatures] = useState([]);
   const [featureVotes, setFeatureVotes] = useState({});
+  const [votedFeatures, setVotedFeatures] = useState({});
   const [collaborationModal, setCollaborationModal] = useState(null);
   const [feedbackScores, setFeedbackScores] = useState({});
   const [showFeedbackFor, setShowFeedbackFor] = useState(null);
 
   const voteFeature = async (featureKey, direction) => {
     if (!user) { navigate('/login'); return; }
-    // Optimistic update in local state
+    if (votedFeatures[featureKey]) return; // already voted on this feature
+    const isRealRow = typeof featureKey === 'number' || !String(featureKey).startsWith('proposed-');
+    // Optimistic update
+    setVotedFeatures((prev) => ({ ...prev, [featureKey]: direction }));
     setFeatureVotes((prev) => {
       const cur = prev[featureKey] ?? { up: 0, down: 0 };
       if (direction === 'up') return { ...prev, [featureKey]: { ...cur, up: cur.up + 1 } };
       return { ...prev, [featureKey]: { ...cur, down: cur.down + 1 } };
     });
-    // Persist to DB only for real DB rows (numeric id)
-    if (typeof featureKey === 'number' || (typeof featureKey === 'string' && !featureKey.startsWith('proposed-'))) {
+    if (isRealRow) {
       const rpcName = direction === 'up' ? 'upvote_feature' : 'downvote_feature';
-      await supabase.rpc(rpcName, { feat_id: Number(featureKey) });
+      const { data: success } = await supabase.rpc(rpcName, { feat_id: Number(featureKey) });
+      if (!success) {
+        // Roll back if server rejected
+        setVotedFeatures((prev) => { const n = { ...prev }; delete n[featureKey]; return n; });
+        setFeatureVotes((prev) => {
+          const cur = prev[featureKey] ?? { up: 0, down: 0 };
+          if (direction === 'up') return { ...prev, [featureKey]: { ...cur, up: Math.max(cur.up - 1, 0) } };
+          return { ...prev, [featureKey]: { ...cur, down: Math.max(cur.down - 1, 0) } };
+        });
+      }
     }
   };
 
@@ -193,6 +221,7 @@ export default function RequestDetail() {
       link: solutionUrl.trim(),
       author: authorName,
       author_rank: authorRank,
+      user_id: user.id,
     });
     setSolutionTitle('');
     setSolutionUrl('');
@@ -253,8 +282,34 @@ export default function RequestDetail() {
               >
                 <span style={{ flex: 1, color: 'var(--text-primary)', fontWeight: 500 }}>{feat.text}</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', minWidth: 100, justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn-ghost" style={{ padding: '0.4rem 0.6rem', fontSize: '1rem', color: 'var(--vote-up)', fontWeight: 700 }} onClick={() => voteFeature(feat.id, 'up')} aria-label="Upvote">▲ {up}</button>
-                  <button type="button" className="btn-ghost" style={{ padding: '0.4rem 0.6rem', fontSize: '1rem', color: 'var(--vote-down)', fontWeight: 700 }} onClick={() => voteFeature(feat.id, 'down')} aria-label="Downvote">▼ {down}</button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{
+                      padding: '0.4rem 0.6rem',
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      color: votedFeatures[feat.id] === 'up' ? '#16a34a' : 'var(--vote-up)',
+                      background: votedFeatures[feat.id] === 'up' ? 'rgba(22,163,74,0.1)' : undefined,
+                      borderRadius: 6,
+                    }}
+                    onClick={() => voteFeature(feat.id, 'up')}
+                    aria-label="Upvote"
+                  >▲ {up}</button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{
+                      padding: '0.4rem 0.6rem',
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      color: votedFeatures[feat.id] === 'down' ? '#dc2626' : 'var(--vote-down)',
+                      background: votedFeatures[feat.id] === 'down' ? 'rgba(220,38,38,0.1)' : undefined,
+                      borderRadius: 6,
+                    }}
+                    onClick={() => voteFeature(feat.id, 'down')}
+                    aria-label="Downvote"
+                  >▼ {down}</button>
                 </span>
               </li>
             );

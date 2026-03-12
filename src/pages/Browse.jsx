@@ -30,6 +30,7 @@ export default function Browse() {
   const [submitting, setSubmitting] = useState(false);
   const { followedRequests, toggleRequest } = useFollow();
 
+  // Fetch requests once on mount — never re-fetches just because auth state changed
   useEffect(() => {
     async function fetchRequests() {
       const { data, error } = await supabase
@@ -42,18 +43,40 @@ export default function Browse() {
     fetchRequests();
   }, []);
 
+  // Separately load which requests this user has already voted on
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('request_votes')
+      .select('request_id')
+      .eq('user_id', user.id)
+      .then(({ data }) => {
+        if (!data) return;
+        const voted = {};
+        data.forEach((v) => { voted[v.request_id] = true; });
+        setVotedRequests(voted);
+      });
+  }, [user]);
+
   const addFeature = () => setKeyFeatures((prev) => [...prev, '']);
   const removeFeature = (i) => setKeyFeatures((prev) => prev.filter((_, idx) => idx !== i));
   const updateFeature = (i, value) => setKeyFeatures((prev) => prev.map((v, idx) => (idx === i ? value : v)));
 
-  const [requestUpvotes, setRequestUpvotes] = useState({});
+  const [votedRequests, setVotedRequests] = useState({});
   const upvoteRequest = async (e, reqId) => {
     e.preventDefault();
     e.stopPropagation();
     if (!user) { navigate('/login'); return; }
+    if (votedRequests[reqId]) return; // already voted
     // Optimistic update
-    setRequestUpvotes((prev) => ({ ...prev, [reqId]: (prev[reqId] ?? 0) + 1 }));
-    await supabase.rpc('upvote_request', { req_id: reqId });
+    setVotedRequests((prev) => ({ ...prev, [reqId]: true }));
+    setRequests((prev) => prev.map((r) => r.id === reqId ? { ...r, upvotes: r.upvotes + 1 } : r));
+    const { data: success } = await supabase.rpc('upvote_request', { req_id: reqId });
+    if (!success) {
+      // Server rejected — roll back
+      setVotedRequests((prev) => ({ ...prev, [reqId]: false }));
+      setRequests((prev) => prev.map((r) => r.id === reqId ? { ...r, upvotes: r.upvotes - 1 } : r));
+    }
   };
 
   const handleSubmitRequest = async () => {
@@ -63,7 +86,7 @@ export default function Browse() {
     const newId = crypto.randomUUID();
     const { data: inserted, error } = await supabase
       .from('requests')
-      .insert({ id: newId, text: newRequestText.trim(), category: newRequestCategory || 'general', upvotes: 0 })
+      .insert({ id: newId, text: newRequestText.trim(), category: newRequestCategory || 'general', upvotes: 0, user_id: user.id })
       .select()
       .single();
     if (!error && inserted) {
@@ -153,7 +176,7 @@ export default function Browse() {
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', textAlign: 'left' }}>
           {filteredRequests.slice(0, 5).map((req) => {
-            const totalUpvotes = (req.upvotes ?? 0) + (requestUpvotes[req.id] ?? 0);
+            const totalUpvotes = req.upvotes ?? 0;
             const demand = REQUEST_DEMAND[req.id];
             const similarCount = demand?.similarCount ?? 0;
             const combinedUpvotes = demand?.combinedUpvotes ?? totalUpvotes;
@@ -199,7 +222,12 @@ export default function Browse() {
                     <button
                       type="button"
                       className="btn-ghost"
-                      style={{ padding: '0.35rem 0.5rem', fontSize: '0.9rem' }}
+                      style={{
+                        padding: '0.35rem 0.5rem',
+                        fontSize: '0.9rem',
+                        color: votedRequests[req.id] ? 'var(--vote-up)' : undefined,
+                        fontWeight: votedRequests[req.id] ? 700 : undefined,
+                      }}
                       onClick={(e) => upvoteRequest(e, req.id)}
                       aria-label="Upvote"
                     >
