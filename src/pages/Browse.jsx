@@ -29,6 +29,8 @@ export default function Browse() {
   const [heroRevealed, setHeroRevealed] = useState(
     () => sessionStorage.getItem('heroRevealed') === '1'
   );
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 12;
   const { followedRequests, toggleRequest } = useFollow();
 
   // Fetch requests once on mount — never re-fetches just because auth state changed
@@ -132,8 +134,20 @@ export default function Browse() {
   if (filterSig !== prevFilterRef.current) {
     prevFilterRef.current = filterSig;
     listKeyRef.current += 1;
+    // Reset to page 1 when filters change (can't use setState here but page resets via the key change)
   }
   const listKey = listKeyRef.current;
+
+  const totalPages = Math.ceil(filteredRequests.length / PAGE_SIZE);
+  const clampedPage = Math.min(page, totalPages || 1);
+  const pageRequests = filteredRequests.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
+
+  // Reset page when filter changes
+  const prevFilterSigRef = useRef(filterSig);
+  if (filterSig !== prevFilterSigRef.current) {
+    prevFilterSigRef.current = filterSig;
+    if (page !== 1) setPage(1);
+  }
 
   return (
     <>
@@ -189,67 +203,104 @@ export default function Browse() {
         ))}
       </div>
 
-      {/* Request list */}
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '1.5rem 1.5rem 4rem', opacity: heroRevealed ? 1 : 0, transform: heroRevealed ? 'none' : 'translateY(20px)', transition: 'opacity 0.55s ease 0.45s, transform 0.55s ease 0.45s', pointerEvents: heroRevealed ? 'auto' : 'none' }}>
+      {/* Request grid */}
+      <div style={{ maxWidth: 1120, margin: '0 auto', padding: '1.75rem 1.5rem 4rem', opacity: heroRevealed ? 1 : 0, transform: heroRevealed ? 'none' : 'translateY(20px)', transition: 'opacity 0.55s ease 0.45s, transform 0.55s ease 0.45s', pointerEvents: heroRevealed ? 'auto' : 'none' }}>
         {loading && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '3rem 0' }}>Loading...</p>}
         {!loading && filteredRequests.length === 0 && (
           <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '3rem 0' }}>No requests found.</p>
         )}
         {!loading && filteredRequests.length > 0 && (
-          <div key={listKey} style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border-soft)' }}>
-            {filteredRequests.map((req, i) => {
-              const isFollowed = !!followedRequests[req.id];
-              const sCount = req.solutions?.[0]?.count ?? 0;
-              return (
-                <div key={req.id} style={{ animation: 'fadeInUp 0.32s ease both', animationDelay: `${Math.min(i, 14) * 0.045}s` }}>
-                  <Link to={`/request/${req.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <div
-                      style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem 1.25rem', background: 'white', transition: 'background 0.12s' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
-                    >
-                      {/* Upvote block */}
-                      <button
-                        type="button"
-                        onClick={(e) => upvoteRequest(e, req.id)}
-                        disabled={!!votedRequests[req.id]}
-                        aria-label="Upvote"
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', minWidth: 40, padding: '0.4rem 0.5rem', borderRadius: 6, border: '1px solid', borderColor: votedRequests[req.id] ? 'var(--accent)' : 'var(--border-soft)', background: votedRequests[req.id] ? 'var(--accent-soft)' : 'transparent', color: votedRequests[req.id] ? 'var(--accent)' : 'var(--text-muted)', cursor: votedRequests[req.id] ? 'default' : 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', flexShrink: 0 }}
+          <>
+            <div key={listKey} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+              {pageRequests.map((req, i) => {
+                const isFollowed = !!followedRequests[req.id];
+                const sCount = req.solutions?.[0]?.count ?? 0;
+                return (
+                  <div key={req.id} style={{ animation: 'fadeInUp 0.32s ease both', animationDelay: `${Math.min(i, 11) * 0.04}s` }}>
+                    <Link to={`/request/${req.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block', height: '100%' }}>
+                      <div
+                        style={{ background: 'white', border: '1px solid var(--border-soft)', borderRadius: 12, padding: '1.25rem', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '0.75rem', transition: 'box-shadow 0.15s, border-color 0.15s', cursor: 'pointer' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.borderColor = 'var(--border-soft)'; }}
                       >
-                        <svg width="10" height="8" viewBox="0 0 10 8" fill="currentColor"><path d="M5 0L10 8H0L5 0Z" /></svg>
-                        <span style={{ fontSize: '0.775rem', fontWeight: 600, lineHeight: 1 }}>{req.upvotes ?? 0}</span>
-                      </button>
+                        {/* Top row: category pill + follow */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          {req.category
+                            ? <span style={{ background: 'var(--accent-soft)', color: 'var(--accent)', padding: '0.15em 0.6em', borderRadius: 4, fontSize: '0.75rem', textTransform: 'capitalize', fontWeight: 600 }}>{req.category}</span>
+                            : <span />}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequest(req.id, req.text); }}
+                            style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem', borderRadius: 6, border: '1px solid', borderColor: isFollowed ? 'var(--accent)' : 'var(--border)', background: isFollowed ? 'var(--accent-soft)' : 'white', color: isFollowed ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}
+                          >
+                            {isFollowed ? 'Following' : 'Follow'}
+                          </button>
+                        </div>
 
-                      {/* Text */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, fontSize: '0.95rem', color: 'var(--text-primary)', lineHeight: 1.45, marginBottom: '0.3rem' }}>{req.text}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-                          {req.category && (
-                            <span style={{ background: 'var(--border-soft)', padding: '0.1em 0.5em', borderRadius: 4, textTransform: 'capitalize', fontWeight: 500 }}>{req.category}</span>
-                          )}
-                          <span>{timeAgo(req.created_at)}</span>
-                          {sCount > 0 && <span>{sCount} solution{sCount !== 1 ? 's' : ''}</span>}
-                          {isFollowed && <span style={{ color: 'var(--accent)', fontWeight: 500 }}>Following</span>}
+                        {/* Title */}
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)', lineHeight: 1.45, flex: 1 }}>{req.text}</div>
+
+                        {/* Bottom row: upvote + meta */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => upvoteRequest(e, req.id)}
+                            disabled={!!votedRequests[req.id]}
+                            aria-label="Upvote"
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.3rem 0.6rem', borderRadius: 6, border: '1px solid', borderColor: votedRequests[req.id] ? 'var(--accent)' : 'var(--border-soft)', background: votedRequests[req.id] ? 'var(--accent-soft)' : 'transparent', color: votedRequests[req.id] ? 'var(--accent)' : 'var(--text-muted)', cursor: votedRequests[req.id] ? 'default' : 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', fontSize: '0.8rem', fontWeight: 600 }}
+                          >
+                            <svg width="9" height="7" viewBox="0 0 10 8" fill="currentColor"><path d="M5 0L10 8H0L5 0Z" /></svg>
+                            {req.upvotes ?? 0}
+                          </button>
+                          <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)', display: 'flex', gap: '0.5rem' }}>
+                            <span>{timeAgo(req.created_at)}</span>
+                            {sCount > 0 && <span>{sCount} sol{sCount !== 1 ? 's' : ''}</span>}
+                          </div>
                         </div>
                       </div>
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
 
-                      {/* Follow button */}
-                      <button
-                        type="button"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequest(req.id, req.text); }}
-                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: 6, border: '1px solid', borderColor: isFollowed ? 'var(--accent)' : 'var(--border)', background: isFollowed ? 'var(--accent-soft)' : 'white', color: isFollowed ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}
-                      >
-                        {isFollowed ? 'Following' : 'Follow'}
-                      </button>
-                    </div>
-                  </Link>
-                  {i < filteredRequests.length - 1 && (
-                    <div style={{ height: 1, background: 'var(--border-soft)' }} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+            {/* Paginator */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', marginTop: '2.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  disabled={clampedPage === 1}
+                  style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid var(--border-soft)', background: 'white', color: clampedPage === 1 ? 'var(--border)' : 'var(--text-muted)', cursor: clampedPage === 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
+                  aria-label="Previous page"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    style={{ width: 38, height: 38, borderRadius: '50%', border: clampedPage === p ? 'none' : '1px solid transparent', background: 'none', color: clampedPage === p ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: clampedPage === p ? 700 : 400, fontSize: '0.925rem', cursor: 'pointer', fontFamily: 'inherit', position: 'relative' }}
+                  >
+                    {p}
+                    {clampedPage === p && (
+                      <span style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 16, height: 2.5, background: 'var(--text-primary)', borderRadius: 2 }} />
+                    )}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  disabled={clampedPage === totalPages}
+                  style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid var(--border-soft)', background: 'white', color: clampedPage === totalPages ? 'var(--border)' : 'var(--text-muted)', cursor: clampedPage === totalPages ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
+                  aria-label="Next page"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
