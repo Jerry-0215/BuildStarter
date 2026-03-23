@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CATEGORIES } from '../data/mockRequests';
-import { REQUEST_DEMAND, ACTIVITY_FEED } from '../data/mockDemo';
-import MarketFitBadge from '../components/MarketFitBadge';
 import { useFollow } from '../context/FollowContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -28,6 +26,9 @@ export default function Browse() {
   const [keyFeaturesExpanded, setKeyFeaturesExpanded] = useState(false);
   const [keyFeatures, setKeyFeatures] = useState(['']);
   const [submitting, setSubmitting] = useState(false);
+  const [heroRevealed, setHeroRevealed] = useState(
+    () => sessionStorage.getItem('heroRevealed') === '1'
+  );
   const { followedRequests, toggleRequest } = useFollow();
 
   // Fetch requests once on mount — never re-fetches just because auth state changed
@@ -57,6 +58,18 @@ export default function Browse() {
         setVotedRequests(voted);
       });
   }, [user]);
+
+  const revealHero = () => {
+    sessionStorage.setItem('heroRevealed', '1');
+    setHeroRevealed(true);
+  };
+
+  // Scroll also triggers the transition
+  useEffect(() => {
+    const onScroll = () => { if (window.scrollY > 4) revealHero(); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const addFeature = () => setKeyFeatures((prev) => [...prev, '']);
   const removeFeature = (i) => setKeyFeatures((prev) => prev.filter((_, idx) => idx !== i));
@@ -112,213 +125,180 @@ export default function Browse() {
     return matchesSearch && matchesCategory;
   });
 
-  return (
-    <div className="container" style={{ padding: '2rem 1.5rem 3rem', textAlign: 'center', maxWidth: 960, margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>Browse requests</h1>
-      <p style={{ color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-        Search, create a request, or open one to see details and solutions.
-      </p>
-      {loading && <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Loading requests…</p>}
+  // Bump this key whenever the list meaningfully changes, so rows re-animate
+  const listKeyRef = useRef(0);
+  const prevFilterRef = useRef('');
+  const filterSig = search + '|' + (category ?? '');
+  if (filterSig !== prevFilterRef.current) {
+    prevFilterRef.current = filterSig;
+    listKeyRef.current += 1;
+  }
+  const listKey = listKeyRef.current;
 
-      {/* Search */}
-      <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <input
-          type="search"
-          placeholder="e.g. FRC fantasy, dashboard, mobile app..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: '100%',
-            maxWidth: 640,
-            padding: '1rem 1.25rem',
-            fontSize: '1.15rem',
-            borderRadius: 12,
-            border: '2px solid var(--border)',
-          }}
-        />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginTop: '1rem' }}>
-          <button
-            type="button"
-            className={category === null ? 'btn-primary' : 'btn-ghost'}
-            style={{ padding: '0.5rem 0.9rem', fontSize: '0.9rem', textTransform: 'capitalize' }}
-            onClick={() => setCategory(null)}
-          >
-            All
-          </button>
-          {CATEGORIES.map((cat) => (
+  return (
+    <>
+      {/* Hero — negative margin pulls it behind the sticky nav so photo fills full viewport top */}
+      <div style={{ backgroundImage: 'linear-gradient(to right, rgba(10,15,30,0.92) 0%, rgba(10,15,30,0.75) 55%, rgba(10,15,30,0.42) 100%), url(https://images.unsplash.com/photo-1504639725590-34d0984388bd?auto=format&fit=crop&w=1600&q=80)', backgroundSize: 'cover', backgroundPosition: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', marginTop: '-56px', paddingTop: heroRevealed ? 'calc(4.5rem + 56px)' : 'calc(50vh - 56px)', paddingBottom: heroRevealed ? '4rem' : 'calc(50vh - 56px)', paddingLeft: '2rem', paddingRight: '2rem', overflow: 'hidden', position: 'relative', transition: 'padding-top 0.9s cubic-bezier(0.4,0,0.2,1), padding-bottom 0.9s cubic-bezier(0.4,0,0.2,1)' }}>
+        <div style={{ maxWidth: 560, position: 'relative', zIndex: 1 }}>
+          {/* <div style={{ display: 'inline-block', background: 'rgba(59,130,246,0.18)', color: '#93c5fd', fontSize: '0.78rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '0.3rem 0.75rem', borderRadius: 999, marginBottom: '1.25rem', border: '1px solid rgba(59,130,246,0.3)' }}>
+            Open platform &bull; Free to post
+          </div> */}
+          <h1 style={{ fontSize: 'clamp(1.75rem, 3vw, 2.6rem)', fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.15, color: 'white', margin: '0 0 1rem' }}>
+            What app do you<br />wish existed?
+          </h1>
+          <p style={{ color: '#94a3b8', fontSize: '1.05rem', lineHeight: 1.65, margin: '0 0 2.25rem', maxWidth: 440 }}>
+            Post a request. Developers build it.<br />The best ideas rise to the top.
+          </p>
+          <div style={{ display: 'flex', gap: '0.625rem', maxWidth: 500 }}>
+            <input
+              type="search"
+              placeholder="Search requests..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); revealHero(); }}
+              style={{ flex: 1, padding: '0.75rem 1rem', fontSize: '0.975rem', borderRadius: 8, border: '1.5px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.07)', color: 'white', outline: 'none' }}
+            />
             <button
-                key={cat}
-                type="button"
-                className={category === cat ? 'btn-primary' : 'btn-ghost'}
-                style={{ padding: '0.5rem 0.9rem', fontSize: '0.9rem', textTransform: 'capitalize', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                onClick={() => setCategory(cat)}
-              >
-                {cat}
-              </button>
-          ))}
+              className="btn-primary"
+              onClick={() => setShowCreateRequest(true)}
+              style={{ padding: '0.75rem 1.25rem', fontSize: '0.975rem', whiteSpace: 'nowrap', borderRadius: 8, flexShrink: 0 }}
+            >
+              Post a request
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Popular requests — with demand signals + follow (TOP 5) */}
-      <section
-        style={{
-          background: 'linear-gradient(135deg, var(--accent-muted) 0%, var(--surface) 100%)',
-          border: '1px solid var(--border)',
-          borderRadius: 16,
-          padding: '1.75rem',
-          marginBottom: '2rem',
-          textAlign: 'center',
-        }}
-      >
-        <h2 style={{ marginBottom: '0.35rem', fontSize: '1.35rem' }}>Popular requests</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '1.25rem' }}>
-          Similar requests are grouped; demand trends and Market Fit Score are illustrative.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', textAlign: 'left' }}>
-          {filteredRequests.slice(0, 5).map((req) => {
-            const totalUpvotes = req.upvotes ?? 0;
-            const demand = REQUEST_DEMAND[req.id];
-            const similarCount = demand?.similarCount ?? 0;
-            const combinedUpvotes = demand?.combinedUpvotes ?? totalUpvotes;
-            const trendPct = demand?.demandTrendPct ?? 0;
-            const marketFit = demand?.marketFitScore ?? 50;
-            const isFollowed = !!followedRequests[req.id];
-            return (
-              <Link key={req.id} to={`/request/${req.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%' }}>
-                <div
-                  className="card"
-                  style={{
-                    cursor: 'pointer',
-                    width: '100%',
-                    display: 'flex',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '1rem',
-                    flexWrap: 'wrap',
-                    transition: 'border-color 0.2s, box-shadow 0.2s',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.boxShadow = '0 6px 24px rgba(37, 99, 235, 0.15)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
-                      <span style={{ fontWeight: 600, fontSize: '1.05rem' }}>{req.text}</span>
-                      <MarketFitBadge score={marketFit} />
-                      {isFollowed && <span style={{ fontSize: '0.75rem', color: 'var(--accent)' }}>Following</span>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      {similarCount > 0 && <span>{similarCount} similar requests</span>}
-                      {similarCount > 0 && <span>·</span>}
-                      <span>Combined ↑ {combinedUpvotes}</span>
-                      {trendPct !== 0 && (
-                        <span style={{ color: trendPct > 0 ? 'var(--vote-up)' : 'var(--vote-down)' }}>
-                          {trendPct > 0 ? '↑' : '↓'} {Math.abs(trendPct)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      style={{
-                        padding: '0.35rem 0.5rem',
-                        fontSize: '0.9rem',
-                        color: votedRequests[req.id] ? 'var(--vote-up)' : undefined,
-                        fontWeight: votedRequests[req.id] ? 700 : undefined,
-                      }}
-                      onClick={(e) => upvoteRequest(e, req.id)}
-                      aria-label="Upvote"
-                    >
-                      ▲ {totalUpvotes}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ padding: '0.35rem 0.65rem', fontSize: '0.85rem' }}
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequest(req.id, req.text); }}
-                    >
-                      {followedRequests[req.id] ? 'Following' : 'Follow'}
-                    </button>
-                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{timeAgo(req.created_at)}</span>
-                    {req.solutions?.[0]?.count > 0 && (
-                      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>· {req.solutions[0].count} solution{req.solutions[0].count !== 1 ? 's' : ''}</span>
-                    )}
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Activity Feed (static) - TOP 5 */}
-      <section className="card" style={{ marginBottom: '2rem', padding: '1.25rem', textAlign: 'left' }}>
-        <h2 style={{ marginBottom: '0.75rem', fontSize: '1.2rem' }}>Activity feed</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-          New solutions from followed creators, trending requests, and community activity.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {ACTIVITY_FEED.slice(0, 5).map((item) => (
-            <div
-              key={item.id}
-              style={{
-                padding: '0.75rem 1rem',
-                background: 'var(--accent-soft)',
-                borderRadius: 8,
-                border: '1px solid var(--border-soft)',
-                fontSize: '0.95rem',
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{item.title}</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{item.subtitle}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>{item.time} · {item.domain}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Create request */}
-      <div style={{ marginBottom: '2.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <button className="btn-primary" onClick={() => setShowCreateRequest(!showCreateRequest)}>
-          {showCreateRequest ? 'Cancel' : '+ Create a request'}
+      {/* Category filter */}
+      <div style={{ background: 'white', borderBottom: '1px solid var(--border-soft)', padding: '0.625rem 1.5rem', display: 'flex', gap: '0.375rem', flexWrap: 'wrap', justifyContent: 'center', opacity: heroRevealed ? 1 : 0, transform: heroRevealed ? 'none' : 'translateY(20px)', transition: 'opacity 0.5s ease 0.3s, transform 0.5s ease 0.3s', pointerEvents: heroRevealed ? 'auto' : 'none' }}>
+        <button
+          type="button"
+          onClick={() => setCategory(null)}
+          style={{ padding: '0.35rem 0.85rem', fontSize: '0.825rem', borderRadius: 999, border: '1px solid', borderColor: category === null ? 'var(--accent)' : 'var(--border)', background: category === null ? 'var(--accent-soft)' : 'white', color: category === null ? 'var(--accent)' : 'var(--text-muted)', fontWeight: category === null ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          All
         </button>
-        {showCreateRequest && (
-          <div className="card" style={{ marginTop: '1rem', width: '100%', maxWidth: '560px', textAlign: 'left' }}>
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => setCategory(cat)}
+            style={{ padding: '0.35rem 0.85rem', fontSize: '0.825rem', borderRadius: 999, border: '1px solid', borderColor: category === cat ? 'var(--accent)' : 'var(--border)', background: category === cat ? 'var(--accent-soft)' : 'white', color: category === cat ? 'var(--accent)' : 'var(--text-muted)', fontWeight: category === cat ? 600 : 400, cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit' }}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Request list */}
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '1.5rem 1.5rem 4rem', opacity: heroRevealed ? 1 : 0, transform: heroRevealed ? 'none' : 'translateY(20px)', transition: 'opacity 0.55s ease 0.45s, transform 0.55s ease 0.45s', pointerEvents: heroRevealed ? 'auto' : 'none' }}>
+        {loading && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '3rem 0' }}>Loading...</p>}
+        {!loading && filteredRequests.length === 0 && (
+          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '3rem 0' }}>No requests found.</p>
+        )}
+        {!loading && filteredRequests.length > 0 && (
+          <div key={listKey} style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border-soft)' }}>
+            {filteredRequests.map((req, i) => {
+              const isFollowed = !!followedRequests[req.id];
+              const sCount = req.solutions?.[0]?.count ?? 0;
+              return (
+                <div key={req.id} style={{ animation: 'fadeInUp 0.32s ease both', animationDelay: `${Math.min(i, 14) * 0.045}s` }}>
+                  <Link to={`/request/${req.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem 1.25rem', background: 'white', transition: 'background 0.12s' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                    >
+                      {/* Upvote block */}
+                      <button
+                        type="button"
+                        onClick={(e) => upvoteRequest(e, req.id)}
+                        disabled={!!votedRequests[req.id]}
+                        aria-label="Upvote"
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', minWidth: 40, padding: '0.4rem 0.5rem', borderRadius: 6, border: '1px solid', borderColor: votedRequests[req.id] ? 'var(--accent)' : 'var(--border-soft)', background: votedRequests[req.id] ? 'var(--accent-soft)' : 'transparent', color: votedRequests[req.id] ? 'var(--accent)' : 'var(--text-muted)', cursor: votedRequests[req.id] ? 'default' : 'pointer', fontFamily: 'inherit', transition: 'all 0.12s', flexShrink: 0 }}
+                      >
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="currentColor"><path d="M5 0L10 8H0L5 0Z" /></svg>
+                        <span style={{ fontSize: '0.775rem', fontWeight: 600, lineHeight: 1 }}>{req.upvotes ?? 0}</span>
+                      </button>
+
+                      {/* Text */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, fontSize: '0.95rem', color: 'var(--text-primary)', lineHeight: 1.45, marginBottom: '0.3rem' }}>{req.text}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                          {req.category && (
+                            <span style={{ background: 'var(--border-soft)', padding: '0.1em 0.5em', borderRadius: 4, textTransform: 'capitalize', fontWeight: 500 }}>{req.category}</span>
+                          )}
+                          <span>{timeAgo(req.created_at)}</span>
+                          {sCount > 0 && <span>{sCount} solution{sCount !== 1 ? 's' : ''}</span>}
+                          {isFollowed && <span style={{ color: 'var(--accent)', fontWeight: 500 }}>Following</span>}
+                        </div>
+                      </div>
+
+                      {/* Follow button */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequest(req.id, req.text); }}
+                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderRadius: 6, border: '1px solid', borderColor: isFollowed ? 'var(--accent)' : 'var(--border)', background: isFollowed ? 'var(--accent-soft)' : 'white', color: isFollowed ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}
+                      >
+                        {isFollowed ? 'Following' : 'Follow'}
+                      </button>
+                    </div>
+                  </Link>
+                  {i < filteredRequests.length - 1 && (
+                    <div style={{ height: 1, background: 'var(--border-soft)' }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Create request modal */}
+      {showCreateRequest && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="card" style={{ width: '100%', maxWidth: 520, padding: '2rem', background: 'white' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Post a request</h2>
+              <button
+                type="button"
+                onClick={() => setShowCreateRequest(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.25rem', color: 'var(--text-muted)', padding: '0.2rem 0.4rem', borderRadius: 4, fontFamily: 'inherit', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
             {!user && (
-              <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              <p style={{ marginBottom: '1rem', color: 'var(--text-muted)', fontSize: '0.875rem', background: 'var(--border-soft)', padding: '0.75rem 1rem', borderRadius: 8 }}>
                 <Link to="/login" style={{ color: 'var(--accent)', fontWeight: 600 }}>Sign in</Link> to submit a request.
               </p>
             )}
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>What would you want to build?</label>
+            <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.875rem' }}>What would you want built?</label>
             <textarea
-              placeholder="e.g. I would like an FRC fantasy website/app"
+              placeholder="e.g. An FRC fantasy website with live scoring and draft picks"
               value={newRequestText}
               onChange={(e) => setNewRequestText(e.target.value)}
               rows={3}
-              style={{ width: '100%', marginBottom: '1rem', resize: 'vertical' }}
+              style={{ width: '100%', marginBottom: '1.25rem', resize: 'vertical' }}
             />
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Category</label>
+            <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.875rem' }}>Category</label>
             <select
               value={newRequestCategory}
               onChange={(e) => setNewRequestCategory(e.target.value)}
-              style={{ width: '100%', marginBottom: '1rem', padding: '0.6em 0.9em', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'inherit' }}
+              style={{ width: '100%', marginBottom: '1.25rem', padding: '0.6em 0.9em', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'inherit', fontSize: '0.925rem' }}
             >
-              <option value="">Select a category…</option>
+              <option value="">Select a category</option>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <div style={{ marginBottom: '1rem' }}>
+            <div style={{ marginBottom: '1.5rem' }}>
               <button
                 type="button"
-                className="btn-ghost"
-                style={{ padding: '0.4rem 0', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
                 onClick={() => setKeyFeaturesExpanded(!keyFeaturesExpanded)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: 'var(--text-muted)', padding: 0, fontFamily: 'inherit', textDecoration: 'underline' }}
               >
-                {keyFeaturesExpanded ? '▼' : '▶'} Key features to include
+                {keyFeaturesExpanded ? 'Hide' : 'Add'} key features (optional)
               </button>
               {keyFeaturesExpanded && (
-                <div style={{ marginTop: '0.75rem', paddingLeft: '0.5rem' }}>
+                <div style={{ marginTop: '0.75rem' }}>
                   {keyFeatures.map((f, i) => (
                     <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
                       <input
@@ -328,20 +308,28 @@ export default function Browse() {
                         onChange={(e) => updateFeature(i, e.target.value)}
                         style={{ flex: 1 }}
                       />
-                      <button type="button" className="btn-ghost" style={{ padding: '0.4rem 0.6rem' }} onClick={() => removeFeature(i)}>Remove</button>
+                      <button type="button" className="btn-ghost" style={{ padding: '0.4rem 0.6rem', fontSize: '0.825rem' }} onClick={() => removeFeature(i)}>Remove</button>
                     </div>
                   ))}
-                  <button type="button" className="btn-secondary" style={{ marginTop: '0.25rem' }} onClick={addFeature}>+ Add feature</button>
+                  <button type="button" className="btn-secondary" style={{ marginTop: '0.25rem', fontSize: '0.825rem' }} onClick={addFeature}>+ Add feature</button>
                 </div>
               )}
             </div>
-            <button className="btn-primary" disabled={submitting || !newRequestText.trim()} onClick={handleSubmitRequest}>
-              {submitting ? 'Submitting…' : 'Submit request'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn-ghost" onClick={() => setShowCreateRequest(false)}>Cancel</button>
+              <button
+                className="btn-primary"
+                disabled={submitting || !newRequestText.trim()}
+                onClick={handleSubmitRequest}
+                style={{ borderRadius: 8 }}
+              >
+                {submitting ? 'Submitting...' : 'Submit request'}
+              </button>
+            </div>
           </div>
-        )}
-      </div>
-
-    </div>
+        </div>
+      )}
+    </>
   );
 }
+

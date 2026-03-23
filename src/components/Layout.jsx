@@ -1,9 +1,20 @@
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }) {
   const location = useLocation();
   const { user, profile } = useAuth();
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  // Reset scrolled when route changes so transparent state is fresh
+  useEffect(() => { setScrolled(window.scrollY > 8); }, [location.pathname]);
+  const isHomePage = location.pathname === '/';
+  const transparent = isHomePage && !scrolled;
   const displayName = profile?.name || user?.email?.split('@')[0] || null;
   const initial = displayName?.[0]?.toUpperCase() ?? '?';
   const navTabs = [
@@ -16,17 +27,17 @@ export default function Layout({ children }) {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header
         style={{
-          background: 'linear-gradient(90deg, var(--accent-soft) 0%, var(--surface) 50%, var(--accent-soft) 100%)',
-          borderBottom: '2px solid var(--border-soft)',
-          padding: '0.75rem 1.5rem',
+          background: transparent ? 'transparent' : 'white',
+          borderBottom: transparent ? 'none' : '1px solid var(--border-soft)',
+          padding: '0 1.5rem',
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          boxShadow: '0 1px 3px rgba(37, 99, 235, 0.06)',
+          transition: 'background 0.3s, border-color 0.3s',
         }}
       >
-        <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Link to="/" style={{ textDecoration: 'none', color: 'var(--blue-dark)', fontWeight: 700, fontSize: '1.75rem', letterSpacing: '-0.02em' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
+          <Link to="/" style={{ textDecoration: 'none', color: transparent ? 'white' : 'var(--text-primary)', fontWeight: 700, fontSize: '1.15rem', letterSpacing: '-0.02em', transition: 'color 0.3s' }}>
             BuildStarter
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -38,19 +49,24 @@ export default function Layout({ children }) {
                     key={tab.path}
                     to={tab.path}
                     style={{
-                      padding: '0.5rem 1rem',
-                      fontSize: '0.9rem',
+                      padding: '0.4rem 0.85rem',
+                      fontSize: '0.875rem',
                       textDecoration: 'none',
-                      borderRadius: 8,
-                      background: isActive ? 'var(--accent)' : 'transparent',
-                      color: isActive ? 'white' : 'var(--text-muted)',
-                      fontWeight: isActive ? 600 : 500,
+                      borderRadius: 6,
+                      background: transparent
+                        ? (isActive ? 'rgba(255,255,255,0.18)' : 'transparent')
+                        : (isActive ? 'var(--accent-soft)' : 'transparent'),
+                      color: transparent
+                        ? (isActive ? 'white' : 'rgba(255,255,255,0.72)')
+                        : (isActive ? 'var(--accent)' : 'var(--text-muted)'),
+                      fontWeight: isActive ? 600 : 400,
+                      transition: 'background 0.3s, color 0.3s',
                     }}
                     onMouseEnter={(e) => {
-                      if (!isActive) e.currentTarget.style.background = 'var(--border-soft)';
+                      if (!isActive) e.currentTarget.style.color = transparent ? 'white' : 'var(--text-primary)';
                     }}
                     onMouseLeave={(e) => {
-                      if (!isActive) e.currentTarget.style.background = '';
+                      if (!isActive) e.currentTarget.style.color = transparent ? 'rgba(255,255,255,0.72)' : '';
                     }}
                   >
                     {tab.label}
@@ -67,19 +83,16 @@ export default function Layout({ children }) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem',
-                  padding: '0.35rem 0.6rem',
-                  borderRadius: 9999,
-                  background: 'var(--accent-muted)',
-                  border: '1px solid var(--border-soft)',
-                  transition: 'box-shadow 0.2s, background 0.2s',
+                  padding: '0.3rem 0.5rem',
+                  borderRadius: 8,
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-soft)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.15)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = ''; e.currentTarget.style.boxShadow = ''; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = transparent ? 'rgba(255,255,255,0.12)' : 'var(--border-soft)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
               >
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent) 0%, var(--blue-dark) 100%)', color: 'white', fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', color: 'white', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {initial}
                 </div>
-                <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.95rem' }}>{displayName}</span>
+                <span style={{ fontWeight: 500, color: transparent ? 'white' : 'var(--text-primary)', fontSize: '0.875rem', transition: 'color 0.3s' }}>{displayName}</span>
               </Link>
             ) : (
               <Link to="/login" className="btn-primary" style={{ padding: '0.45rem 1rem', fontSize: '0.9rem', textDecoration: 'none' }}>
