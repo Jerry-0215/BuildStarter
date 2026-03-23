@@ -230,7 +230,7 @@ export default function Browse() {
                             : <span />}
                           <button
                             type="button"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleRequest(req.id, req.text); }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (!user) { navigate('/login'); return; } toggleRequest(req.id, req.text); }}
                             style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem', borderRadius: 6, border: '1px solid', borderColor: isFollowed ? 'var(--accent)' : 'var(--border)', background: isFollowed ? 'var(--accent-soft)' : 'white', color: isFollowed ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}
                           >
                             {isFollowed ? 'Following' : 'Follow'}

@@ -32,7 +32,7 @@ export default function App() {
                   <Route path="/following" element={<Following />} />
                   <Route path="/ladder" element={<Ladder />} />
                   <Route path="/friends" element={<Friends />} />
-                  <Route path="/friend/:name" element={<FriendProfile />} />
+                  <Route path="/friend/:id" element={<FriendProfile />} />
                   <Route path="/request/:id" element={<RequestDetail />} />
                   <Route path="/account" element={<Account />} />
                 </Routes>
